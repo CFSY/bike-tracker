@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import Geolocation from "@react-native-community/geolocation";
 
 function Tracker({ data }) {
@@ -6,71 +6,120 @@ function Tracker({ data }) {
   const [theft, setTheft] = useState(false);
   const [latitude, setLatitude] = useState(null);
   const [longitude, setLongitude] = useState(null);
+  const [accelerationX, setAccelerationX] = useState(0);
+  const [accelerationY, setAccelerationY] = useState(0);
+  const [accelerationZ, setAccelerationZ] = useState(0);
+  const [acceleration, setAcceleration] = useState(0);
 
-  // Accelerometer data
-  let previousAcceleration = { x: 0, y: 0, z: 0 };
-  let jerkThreshold = 5;  // Set your own threshold for what you consider a jerk
+  let accelerationThreshold = 15;
 
-  // Detects a significant jerk in the device
-  function detectJerk(event) {
-    console.log(event)
-    // const a = event.accelerationIncludingGravity;
-    
-    // // Calculate the magnitude of the acceleration vector
-    // let accelerationMagnitude = Math.sqrt(a.x * a.x + a.y * a.y + a.z * a.z);
-    
-    // // Calculate the difference in acceleration
-    // let deltaAcceleration = Math.abs(accelerationMagnitude - previousAcceleration);
-    
-    // // Update previous acceleration
-    // previousAcceleration = accelerationMagnitude;
-    
-    // // If the change in acceleration is greater than the threshold, return true
-    // if (deltaAcceleration > jerkThreshold) {
-    //   return true;
-    // } else {
-    //   return false;
-    // }
+  function toggleArm() {
+    if (armed && theft) setTheft(!theft);
+    setArmed(!armed);
+    console.log(armed, theft);
   }
 
-  useEffect(() => {
-    if (window.DeviceMotionEvent) {
-      window.addEventListener('devicemotion', detectJerk, true);
-    } else {
-      console.log("DeviceMotionEvent is not supported");
-    }
+  function detectJerk(event) {
+    if (!armedRef.current) return false;
 
-    if (armed) {
-      const intervalId = setInterval(() => {
-        if (detectJerk()) {
-          setTheft(true);
-        }
-      }, 1000);
-      return () => clearInterval(intervalId);
+    const a = event.acceleration;
+
+    setAccelerationX(a.x);
+    setAccelerationY(a.y);
+    setAccelerationZ(a.z);
+
+    let accelerationMagnitude = Math.sqrt(a.x * a.x + a.y * a.y + a.z * a.z);
+    setAcceleration(accelerationMagnitude);
+
+    if (accelerationMagnitude > accelerationThreshold) {
+      setTheft(true);
+      return true;
+    } else {
+      return false;
     }
+  }
+
+  const armedRef = useRef(armed);
+  useEffect(() => {
+    armedRef.current = armed;
   }, [armed]);
 
   useEffect(() => {
+    // Only set up the event listener if `armed` is true
+    if (armed) {
+      if (window.DeviceMotionEvent) {
+        window.addEventListener("devicemotion", detectJerk, true);
+      } else {
+        console.log("DeviceMotionEvent is not supported");
+      }
+    }
+
+    // Clean up the event listener when the component unmounts or when `armed` changes
+    return () => {
+      if (window.DeviceMotionEvent) {
+        window.removeEventListener("devicemotion", detectJerk, true);
+      }
+    };
+  }, [armed]);
+
+  useEffect(() => {
+    let watcher = null;
     if (theft) {
-      const intervalId = setInterval(() => {
-        Geolocation.getCurrentPosition((position) => {
+      watcher = Geolocation.watchPosition(
+        (position) => {
           const { latitude, longitude } = position.coords;
           setLatitude(latitude);
           setLongitude(longitude);
           console.log(latitude, longitude);
-        });
-      }, 1000);
-      return () => clearInterval(intervalId);
+        },
+        (error) => console.log(error),
+        {
+          enableHighAccuracy: true,
+          timeout: 20000,
+          maximumAge: 1000,
+          distanceFilter: 10,
+        }
+      );
     }
+    return () => {
+      if (watcher) {
+        Geolocation.clearWatch(watcher);
+      }
+    };
   }, [theft]);
 
   return (
-    <div className="flex flex-col items-center justify-between bg-white rounded shadow-md p-3 h-[50vh] w-[90vw]">
+    <div className="flex flex-col items-center justify-between bg-white rounded shadow-md p-3 h-[450px] w-[90vw]">
       <div className="items-left w-[100%]">
         <h1 className="text-2xl font-bold mb-3">Device ID: {data.id}</h1>
         <h1 className="text-2xl font-bold mb-3">
-          Status: {armed ? "Armed" : "Disarmed"}
+          Status:{" "}
+          <span className={armed ? "text-green-500" : "text-red-500"}>
+            {armed ? "Armed" : "Disarmed"}
+          </span>
         </h1>
+        <h1 className="text-2xl font-bold mb-3">
+          Theft Detected:{" "}
+          <span className={theft ? "text-red-500" : "text-green-500"}>
+            {theft ? "Yes" : "No"}
+          </span>
+        </h1>
+        {armed && (
+          <div>
+            <h2 className="text-xl mb-3">
+              Acceleration X: {Number(accelerationX).toFixed(2)}
+            </h2>
+            <h2 className="text-xl mb-3">
+              Acceleration Y: {Number(accelerationY).toFixed(2)}
+            </h2>
+            <h2 className="text-xl mb-3">
+              Acceleration Z: {Number(accelerationZ).toFixed(2)}
+            </h2>
+            <h2 className="text-xl mb-3">
+              Acceleration: {Number(acceleration).toFixed(2)}
+            </h2>
+          </div>
+        )}
         {theft && (
           <div>
             <h1 className="text-xl mb-3">Latitude: {latitude}</h1>
@@ -79,8 +128,8 @@ function Tracker({ data }) {
         )}
       </div>
       <button
-        onClick={() => setArmed(!armed)}
-        className={`mt-5 text-white font-bold py-2 px-4 rounded w-32 ${
+        onClick={toggleArm}
+        className={`mb-2 text-white font-bold py-2 px-4 rounded w-32 ${
           armed
             ? "bg-red-500 active:bg-red-700"
             : "bg-green-500 active:bg-green-700"
