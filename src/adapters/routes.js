@@ -3,7 +3,7 @@ import axios from "axios";
 export async function updateDeviceStatus(device_id, lat, long, is_stolen) {
   try {
     const response = await axios.put(
-      `${process.env.REACT_APP_BASE_URL}/devices/${device_id}/location`,
+      `${process.env.REACT_APP_BASE_URL}/devices/${device_id}/update`,
       {
         lat: lat,
         long: long,
