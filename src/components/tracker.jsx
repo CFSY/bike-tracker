@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
 import Geolocation from "@react-native-community/geolocation";
+import { updateDeviceStatus } from "../adapters/routes";
 
 function Tracker({ data }) {
   const [armed, setArmed] = useState(false);
@@ -10,12 +11,34 @@ function Tracker({ data }) {
   const [accelerationY, setAccelerationY] = useState(0);
   const [accelerationZ, setAccelerationZ] = useState(0);
   const [acceleration, setAcceleration] = useState(0);
+  const [spoofing, setSpoofing] = useState(false);
+
+  useEffect(() => {
+    const interval = setInterval(async () => {
+      if (theft) {
+        if (spoofing) {
+          setLatitude((prev) => prev + 0.0001);
+        }
+        try {
+          console.log("updating device status");
+          await updateDeviceStatus(data.id, latitude, longitude, theft);
+        } catch (error) {
+          console.error("Failed to update device status:", error);
+        }
+      }
+    }, 1000);
+
+    return () => {
+      clearInterval(interval);
+    };
+  }, [theft, latitude, longitude, spoofing]);
 
   let accelerationThreshold = 15;
 
   function toggleArm() {
     if (armed && theft) setTheft(!theft);
     setArmed(!armed);
+    setSpoofing(false);
     console.log(armed, theft);
   }
 
@@ -68,9 +91,13 @@ function Tracker({ data }) {
       watcher = Geolocation.watchPosition(
         (position) => {
           const { latitude, longitude } = position.coords;
-          setLatitude(latitude);
-          setLongitude(longitude);
-          console.log(latitude, longitude);
+          if (!spoofing) {
+            setLatitude(latitude);
+            setLongitude(longitude);
+            console.log("Update Real GPS:", latitude, longitude);
+          } else {
+            console.log("Ignore Real GPS");
+          }
         },
         (error) => console.log(error),
         {
@@ -86,10 +113,10 @@ function Tracker({ data }) {
         Geolocation.clearWatch(watcher);
       }
     };
-  }, [theft]);
+  }, [theft, spoofing]);
 
   return (
-    <div className="flex flex-col items-center justify-between bg-white rounded shadow-md p-3 h-[450px] w-[90vw]">
+    <div className="flex flex-col items-center justify-between bg-white rounded shadow-md p-3 h-[500px] w-[90vw]">
       <div className="items-left w-[100%]">
         <h1 className="text-2xl font-bold mb-3">Device ID: {data.id}</h1>
         <h1 className="text-2xl font-bold mb-3">
@@ -127,6 +154,16 @@ function Tracker({ data }) {
           </div>
         )}
       </div>
+      {theft && armed && !spoofing && (
+        <button
+          onClick={() => {
+            setSpoofing(true);
+          }}
+          className="mb-2 text-white font-bold py-2 px-4 rounded w-32 bg-blue-500 active:bg-blue-700"
+        >
+          Spoof
+        </button>
+      )}
       <button
         onClick={toggleArm}
         className={`mb-2 text-white font-bold py-2 px-4 rounded w-32 ${
